@@ -19,7 +19,9 @@ import {
   Zap,
   Volume2,
   VolumeX,
-  Languages
+  Languages,
+  Gift,
+  Lock
 } from 'lucide-react';
 import { POKEMON_NAMES, getPokemonImage, getPokemonData, TYPE_EFFECTIVENESS, EVOLUTION_MAP, ARENAS, GYMS } from './constants';
 import { SHOP_ITEMS } from './constants/items';
@@ -36,6 +38,7 @@ const BattleView = lazy(() => import('./components/BattleView').then(m => ({ def
 const ShopView = lazy(() => import('./components/ShopView').then(m => ({ default: m.ShopView })));
 const GymSelectView = lazy(() => import('./components/GymSelectView').then(m => ({ default: m.GymSelectView })));
 const TeamSelectView = lazy(() => import('./components/TeamSelectView').then(m => ({ default: m.TeamSelectView })));
+const GuideView = lazy(() => import('./components/GuideView').then(m => ({ default: m.GuideView })));
 
 const getEffectiveness = (moveType: string, targetTypes: string[]) => {
   let multiplier = 1;
@@ -53,7 +56,7 @@ const getEffectiveness = (moveType: string, targetTypes: string[]) => {
 // --- Components ---
 // Moved to separate files: PokeballIcon, TypeBadge, Card, BattleView, CollectionView, ShopView, GymSelectView, TeamSelectView, DrawView
 
-type View = 'draw' | 'collection' | 'battle' | 'select-team' | 'shop' | 'gyms';
+type View = 'draw' | 'collection' | 'battle' | 'select-team' | 'shop' | 'gyms' | 'guide';
 
 function AppContent() {
   const { t, lang, setLang } = useLanguage();
@@ -68,7 +71,7 @@ function AppContent() {
           Object.keys(parsed).forEach(id => {
             if (parsed[id]) cards[Number(id)] = 1;
           });
-          return { cards, coins: 500, hpMap: {}, lastHealTime: Date.now(), badges: [], inventory: {}, lang: 'en' };
+          return { cards, coins: 1000, hpMap: {}, lastHealTime: Date.now(), badges: [], inventory: {}, lang: 'en', lastDailyReward: 0 };
         }
         return {
           ...parsed,
@@ -76,13 +79,14 @@ function AppContent() {
           lastHealTime: parsed.lastHealTime || Date.now(),
           badges: parsed.badges || [],
           inventory: parsed.inventory || {},
-          lang: parsed.lang || 'en'
+          lang: parsed.lang || 'en',
+          lastDailyReward: parsed.lastDailyReward || 0
         };
       } catch (e) {
-        return { cards: {}, coins: 1000, hpMap: {}, lastHealTime: Date.now(), badges: [], inventory: {}, lang: 'en' };
+        return { cards: {}, coins: 1000, hpMap: {}, lastHealTime: Date.now(), badges: [], inventory: {}, lang: 'en', lastDailyReward: 0 };
       }
     }
-    return { cards: {}, coins: 1000, hpMap: {}, lastHealTime: Date.now(), badges: [], inventory: {}, lang: 'en' };
+    return { cards: {}, coins: 1000, hpMap: {}, lastHealTime: Date.now(), badges: [], inventory: {}, lang: 'en', lastDailyReward: 0 };
   });
 
   // Sync lang state with collection
@@ -101,6 +105,16 @@ function AppContent() {
   const [selectedPokemon, setSelectedPokemon] = useState<Pokemon | null>(null);
   const [healingPokemonId, setHealingPokemonId] = useState<number | null>(null);
   const [isMuted, setIsMuted] = useState(false);
+  const getPokemonWithBoosts = useCallback((id: number) => {
+    const attackBoost = collection.attackBoosts?.[id] || 0;
+    const defenseBoost = collection.defenseBoosts?.[id] || 0;
+    return getPokemonData(id, attackBoost, defenseBoost);
+  }, [collection.attackBoosts, collection.defenseBoosts]);
+
+  const currentSelectedPokemon = useMemo(() => {
+    if (!selectedPokemon) return null;
+    return getPokemonWithBoosts(selectedPokemon.id);
+  }, [selectedPokemon, getPokemonWithBoosts]);
 
   // --- Sound Effects ---
   const playSound = useCallback((type: 'flip' | 'hit' | 'victory' | 'defeat' | 'draw' | 'exp' | 'evolve' | 'battle' | 'click') => {
@@ -354,7 +368,7 @@ function AppContent() {
 
         Object.keys(prev.cards).forEach(idStr => {
           const id = Number(idStr);
-          const pokemon = getPokemonData(id);
+          const pokemon = getPokemonWithBoosts(id);
           const currentHp = newHpMap[id] !== undefined ? newHpMap[id] : pokemon.hp;
           
           if (currentHp < pokemon.hp) {
@@ -408,7 +422,7 @@ function AppContent() {
       }
     }));
     playSound('exp');
-    setToast({ message: t('shop.buySuccess', { name: t(`item.${item.id}.name`) }), type: 'success' });
+    setToast({ message: t('shop.bought_toast', { name: t(`item.${item.id}.name`) }), type: 'success' });
   };
 
   const useItem = (itemId: string, pokemon: Pokemon) => {
@@ -443,7 +457,7 @@ function AppContent() {
           nextId = nextIdOrIds;
         }
 
-        const evolvedPokemon = getPokemonData(nextId);
+        const evolvedPokemon = getPokemonWithBoosts(nextId);
 
         setCollection(prev => {
           const newCards = { ...prev.cards };
@@ -493,6 +507,22 @@ function AppContent() {
         setTimeout(() => setHealingPokemonId(null), 1000);
       } else if (item.type === 'rare-candy') {
         newCards[pokemon.id] = (newCards[pokemon.id] || 0) + 1;
+      } else if (item.type === 'attack-boost') {
+        const newAttackBoosts = { ...(prev.attackBoosts || {}) };
+        newAttackBoosts[pokemon.id] = (newAttackBoosts[pokemon.id] || 0) + (item.value || 0);
+        return {
+          ...prev,
+          inventory: newInventory,
+          attackBoosts: newAttackBoosts
+        };
+      } else if (item.type === 'defense-boost') {
+        const newDefenseBoosts = { ...(prev.defenseBoosts || {}) };
+        newDefenseBoosts[pokemon.id] = (newDefenseBoosts[pokemon.id] || 0) + (item.value || 0);
+        return {
+          ...prev,
+          inventory: newInventory,
+          defenseBoosts: newDefenseBoosts
+        };
       }
 
       return {
@@ -510,6 +540,11 @@ function AppContent() {
   const handleDraw = () => {
     if (isDrawing) return;
     
+    if (collection.coins < 100) {
+      setToast({ message: t('draw.insufficient'), type: 'error' });
+      return;
+    }
+
     playSound('draw');
     setIsDrawing(true);
     setIsFlipped(false);
@@ -519,7 +554,7 @@ function AppContent() {
     
     setTimeout(() => {
       const randomId = Math.floor(Math.random() * 151) + 1;
-      const newPokemon = getPokemonData(randomId);
+      const newPokemon = getPokemonWithBoosts(randomId);
       setCurrentCard(newPokemon);
       setIsDrawing(false);
 
@@ -531,6 +566,7 @@ function AppContent() {
         setIsFlipped(true);
         setCollection(prev => ({
           ...prev,
+          coins: prev.coins - 100,
           cards: { ...prev.cards, [randomId]: (prev.cards[randomId] || 0) + 1 },
           hpMap: { ...prev.hpMap, [randomId]: newPokemon.hp }
         }));
@@ -540,6 +576,25 @@ function AppContent() {
         setTimeout(() => setDrawEffect('none'), 3000);
       }, 400); // Faster flip start
     }, 400); // Faster draw preparation
+  };
+
+  const claimDailyReward = () => {
+    const now = Date.now();
+    const lastClaimed = collection.lastDailyReward || 0;
+    const oneDay = 24 * 60 * 60 * 1000;
+
+    if (now - lastClaimed < oneDay) {
+      setToast({ message: t('shop.claimed'), type: 'error' });
+      return;
+    }
+
+    setCollection(prev => ({
+      ...prev,
+      coins: prev.coins + 500,
+      lastDailyReward: now
+    }));
+    playSound('exp');
+    setToast({ message: t('shop.reward_toast'), type: 'success' });
   };
 
   const getWeaknesses = (type: string) => {
@@ -588,8 +643,8 @@ function AppContent() {
     }
   };
 
-  const start3vs3Battle = (team: Pokemon[]) => {
-    const opponentTeam = Array.from({ length: 3 }, () => {
+  const startStandardBattle = (team: Pokemon[]) => {
+    const opponentTeam = Array.from({ length: team.length }, () => {
       const randomId = Math.floor(Math.random() * 151) + 1;
       return getPokemonData(randomId);
     });
@@ -607,7 +662,7 @@ function AppContent() {
       currentPlayerIndex: 0,
       currentOpponentIndex: 0,
       turn: playerFirst ? 'player' : 'opponent',
-      logs: [t('battle.start3vs3', { arena: t(`arena.${selectedArena.id}.name`) }), `${t(`pokemon.${team[0].id}`)} vs ${t(`pokemon.${opponentTeam[0].id}`)}`],
+      logs: [t('battle.startStandard', { arena: t(`arena.${selectedArena.id}.name`), count: team.length }), `${t(`pokemon.${team[0].id}`)} vs ${t(`pokemon.${opponentTeam[0].id}`)}`],
       isFinished: false,
       isPlayerAttacking: false,
       isOpponentAttacking: false,
@@ -622,7 +677,7 @@ function AppContent() {
     playSound('battle');
 
     if (!playerFirst) {
-      setTimeout(() => executeOpponentTurn(playerHp, opponentHp, 0, 0, team, opponentTeam, [t('battle.start3vs3', { arena: t(`arena.${selectedArena.id}.name`) }), `${t(`pokemon.${team[0].id}`)} vs ${t(`pokemon.${opponentTeam[0].id}`)}`]), 1500);
+      setTimeout(() => executeOpponentTurn(playerHp, opponentHp, 0, 0, team, opponentTeam, [t('battle.startStandard', { arena: t(`arena.${selectedArena.id}.name`), count: team.length }), `${t(`pokemon.${team[0].id}`)} vs ${t(`pokemon.${opponentTeam[0].id}`)}`]), 1500);
     }
   };
 
@@ -647,7 +702,7 @@ function AppContent() {
     oTeam: Pokemon[],
     logs: string[]
   ) => {
-    if (pIdx >= 3 || oIdx >= 3) return;
+    if (pIdx >= pTeam.length || oIdx >= oTeam.length) return;
 
     setBattleState(prev => ({ ...prev, isOpponentAttacking: true }));
     
@@ -677,7 +732,7 @@ function AppContent() {
       setBattleState(prev => {
         const newLogs = [...prev.logs, t('battle.log.attack', { 
           attacker: t(`pokemon.${attacker.id}`), 
-          move: t(`move.${move.name.toLowerCase().replace(/ /g, '_')}`), 
+          move: t('move.' + move.name), 
           effect: effectMsg, 
           damage 
         })];
@@ -688,7 +743,7 @@ function AppContent() {
         if (newPlayerHp[pIdx] === 0) {
           newLogs.push(t('battle.log.fainted', { name: t(`pokemon.${target.id}`) }));
           nextPIdx++;
-          if (nextPIdx >= 3) {
+          if (nextPIdx >= pTeam.length) {
             newLogs.push(t('battle.log.allFaintedDefeat'));
             finished = true;
             winner = 'opponent';
@@ -760,7 +815,7 @@ function AppContent() {
       setBattleState(prev => {
         const newLogs = [...prev.logs, t('battle.log.attack', { 
           attacker: t(`pokemon.${attacker.id}`), 
-          move: t(`move.${move.name.toLowerCase().replace(/ /g, '_')}`), 
+          move: t('move.' + move.name), 
           effect: effectMsg, 
           damage 
         })];
@@ -778,7 +833,7 @@ function AppContent() {
           setToast({ message: t('battle.captured_toast', { name: t(`pokemon.${target.id}`) }), type: 'success' });
           
           nextOIdx++;
-          if (nextOIdx >= 3) {
+          if (nextOIdx >= battleState.opponentTeam.length) {
             newLogs.push(t('battle.log.allOpponentFaintedWin'));
             finished = true;
             winner = 'player';
@@ -870,7 +925,7 @@ function AppContent() {
   const filteredPokemon = useMemo(() => {
     const all = Array.from({ length: 151 }, (_, i) => {
       const id = i + 1;
-      const data = getPokemonData(id);
+      const data = getPokemonWithBoosts(id);
       return {
         ...data,
         collected: !!collection.cards[id],
@@ -880,7 +935,9 @@ function AppContent() {
     });
 
     const filtered = all.filter(p => {
-      const matchesSearch = p.name.toLowerCase().includes(searchTerm.toLowerCase()) || 
+      const translatedName = t('pokemon.' + p.id).toLowerCase();
+      const matchesSearch = translatedName.includes(searchTerm.toLowerCase()) || 
+                           p.name.toLowerCase().includes(searchTerm.toLowerCase()) || 
                            p.id.toString().includes(searchTerm);
       const matchesType = typeFilter === 'All' || p.types.includes(typeFilter);
       const matchesRarity = rarityFilter === 'All' || p.rarity === rarityFilter;
@@ -980,7 +1037,7 @@ function AppContent() {
         nextId = nextIdOrIds;
       }
 
-      const evolvedPokemon = getPokemonData(nextId);
+      const evolvedPokemon = getPokemonWithBoosts(nextId);
 
       setCollection(prev => {
         const newCards = { ...prev.cards };
@@ -1063,6 +1120,15 @@ function AppContent() {
             className={`px-3 md:px-4 py-1.5 md:py-2 rounded-full text-[10px] md:text-xs font-bold transition-all whitespace-nowrap ${view === 'select-team' || view === 'battle' ? 'bg-[#141414] text-[#E4E3E0]' : 'hover:bg-[#141414]/10'}`}
           >
             {t('nav.battle')}
+          </button>
+          <button 
+            onClick={() => {
+              playSound('click');
+              setView('guide');
+            }}
+            className={`px-3 md:px-4 py-1.5 md:py-2 rounded-full text-[10px] md:text-xs font-bold transition-all whitespace-nowrap ${view === 'guide' ? 'bg-[#141414] text-[#E4E3E0]' : 'hover:bg-[#141414]/10'}`}
+          >
+            {t('nav.guide')}
           </button>
           <button 
             onClick={() => {
@@ -1174,12 +1240,16 @@ function AppContent() {
 
               <button
                 onClick={handleDraw}
-                disabled={isDrawing}
+                disabled={isDrawing || (collection.coins < 100)}
                 className="group relative px-12 py-4 bg-[#141414] text-[#E4E3E0] rounded-full font-bold text-lg overflow-hidden transition-transform active:scale-95 disabled:opacity-50"
               >
-                <span className="relative z-10 flex items-center gap-2">
-                  {isDrawing ? t('draw.preparing') : t('draw.button')}
-                  <RefreshCw className={`w-5 h-5 ${isDrawing ? 'animate-spin' : ''}`} />
+                <div className="absolute inset-0 bg-blue-600 translate-y-full group-hover:translate-y-0 transition-transform" />
+                <span className="relative z-10 flex flex-col items-center">
+                  <span className="flex items-center gap-2">
+                    {isDrawing ? t('draw.preparing') : t('draw.button')}
+                    <RefreshCw className={`w-5 h-5 ${isDrawing ? 'animate-spin' : ''}`} />
+                  </span>
+                  {!isDrawing && <span className="text-[10px] opacity-60 font-mono">{t('draw.cost')}</span>}
                 </span>
               </button>
             </motion.div>
@@ -1191,37 +1261,40 @@ function AppContent() {
               exit={{ opacity: 0, y: -20 }}
               className="py-8"
             >
-              <div className="flex flex-col md:flex-row justify-between items-start md:items-end gap-6 mb-12">
+              <div className="flex flex-col gap-8 mb-12">
                 <div>
                   <h2 className="text-6xl font-bold tracking-tighter italic serif">{t('gym.challenge_title')}</h2>
                   <p className="text-sm opacity-60 font-mono mt-2 uppercase">{t('gym.challenge_desc')}</p>
                   <p className="text-[10px] font-mono opacity-40 uppercase mt-1">{t('gym.arena_boost_note')}</p>
                   
-                  <div className="hidden md:flex items-center gap-1 mt-6 opacity-20">
-                    {GYMS.map((g, i) => (
-                      <React.Fragment key={g.id}>
-                        <div className={`w-3 h-3 rounded-full ${collection.badges.includes(g.badge) ? 'bg-yellow-400 opacity-100' : 'bg-[#141414]'}`} />
-                        {i < GYMS.length - 1 && <div className="w-8 h-0.5 bg-[#141414]" />}
-                      </React.Fragment>
-                    ))}
-                  </div>
-                  <div className="flex flex-wrap gap-2 mt-4">
-                    {Array.from(new Set(GYMS.map(g => g.type))).map(type => (
-                      <TypeBadge key={type} type={type} />
-                    ))}
+                  <div className="relative mt-8 overflow-x-auto pb-4 no-scrollbar">
+                    {/* Connecting Line */}
+                    <div className="absolute top-1.5 left-8 right-8 h-0.5 bg-[#141414] opacity-10 z-0" />
+                    
+                    <div className="relative z-10 flex items-start gap-8 px-2">
+                      {GYMS.map((g) => (
+                        <div key={g.id} className="flex flex-col items-center gap-3 min-w-[56px]">
+                          <div className={`w-3 h-3 rounded-full transition-all shrink-0 z-10 ${collection.badges.includes(g.badge) ? 'bg-yellow-400 shadow-[0_0_8px_rgba(250,204,21,0.6)]' : 'bg-[#141414] opacity-20'}`} />
+                          <div className="scale-75 origin-top">
+                            <TypeBadge type={g.type} />
+                          </div>
+                        </div>
+                      ))}
+                    </div>
                   </div>
                 </div>
-                <div className="flex items-center gap-4 bg-white px-6 py-3 rounded-2xl border border-[#141414] shadow-sm">
+
+                <div className="flex items-center gap-4 bg-white px-6 py-4 rounded-2xl border border-[#141414] shadow-sm w-fit">
                   <div className="flex flex-col">
-            <span className="text-[10px] font-mono opacity-50 uppercase">{t('gym.badges_earned')}</span>
-                    <div className="flex gap-2 mt-1">
+                    <span className="text-[10px] font-mono opacity-50 uppercase tracking-wider mb-2">{t('gym.badges_earned')}</span>
+                    <div className="flex flex-wrap gap-3">
                       {GYMS.map(gym => (
                         <div 
                           key={gym.id} 
                           title={t(`gym.${gym.id}.badge`)}
-                          className={`w-8 h-8 rounded-full flex items-center justify-center text-sm border ${
+                          className={`w-10 h-10 rounded-full flex items-center justify-center text-lg border transition-all ${
                             collection.badges.includes(gym.badge) 
-                              ? 'bg-yellow-400 border-yellow-600 shadow-[0_0_10px_rgba(250,204,21,0.4)]' 
+                              ? 'bg-yellow-400 border-yellow-600 shadow-[0_0_15px_rgba(250,204,21,0.4)] scale-110' 
                               : 'bg-slate-100 border-slate-200 opacity-30 grayscale'
                           }`}
                         >
@@ -1234,7 +1307,10 @@ function AppContent() {
               </div>
 
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
-                {GYMS.map((gym) => {
+                <div className="col-span-full mb-4">
+                  <h3 className="text-2xl font-bold tracking-tighter italic serif border-b-2 border-[#141414] pb-2 uppercase">{t('gym.leaders_title')}</h3>
+                </div>
+                {GYMS.filter(g => !['lorelei', 'bruno', 'agatha', 'lance', 'champion'].includes(g.id)).map((gym) => {
                   const isDefeated = collection.badges.includes(gym.badge);
                   return (
                     <motion.div
@@ -1256,7 +1332,12 @@ function AppContent() {
                           </div>
                           <div>
                             <span className="px-2 py-0.5 bg-white/20 backdrop-blur-md rounded text-[8px] font-bold text-white uppercase tracking-widest mb-1 block w-fit">
-                              {t(`type.${gym.type}`)} {t('gym.gym')}
+                              {gym.type.split('/').map((t_type, i) => (
+                                <React.Fragment key={i}>
+                                  {i > 0 && '/'}
+                                  {t('type.' + t_type)}
+                                </React.Fragment>
+                              ))} {t('gym.gym')}
                             </span>
                             <h4 className="text-white font-bold text-xl tracking-tight leading-none">{t(`gym.${gym.id}.leader`)}</h4>
                           </div>
@@ -1291,6 +1372,11 @@ function AppContent() {
                           </div>
 
                           <div className="flex justify-between items-center text-[10px] font-mono border-t border-slate-100 pt-3">
+                            <span className="opacity-50 uppercase">{t('gym.team_size')}</span>
+                            <span className="font-bold">{t('gym.team_size_count', { count: gym.pokemonIds.length })}</span>
+                          </div>
+
+                          <div className="flex justify-between items-center text-[10px] font-mono">
                             <span className="opacity-50 uppercase">{t('gym.reward')}</span>
                             <span className="font-bold text-yellow-600 flex items-center gap-1">
                               <Zap className="w-3 h-3 fill-yellow-600" /> {gym.reward}
@@ -1299,10 +1385,10 @@ function AppContent() {
                           
                           <button
                             onClick={() => {
-                              if (selectedTeam.length !== 3) {
+                              if (selectedTeam.length !== gym.pokemonIds.length) {
                                 setPendingGym(gym);
                                 setView('select-team');
-                                setToast({ message: t('battle.select_3'), type: 'error' });
+                                setToast({ message: t('battle.select_team_size', { count: gym.pokemonIds.length }), type: 'error' });
                               } else {
                                 startGymBattle(gym, selectedTeam);
                               }
@@ -1320,6 +1406,112 @@ function AppContent() {
                     </motion.div>
                   );
                 })}
+
+                <div className="col-span-full mt-12 mb-4 flex items-center justify-between border-b-2 border-red-600 pb-2">
+                  <h3 className="text-2xl font-bold tracking-tighter italic serif uppercase text-red-600">{t('gym.elite_four_title')}</h3>
+                  {collection.badges.length < 8 && (
+                    <span className="text-[10px] font-mono bg-red-600 text-white px-3 py-1 rounded-full uppercase tracking-widest animate-pulse">
+                      {t('gym.league_locked_requirement', { count: 8 - collection.badges.length })}
+                    </span>
+                  )}
+                </div>
+                {GYMS.filter(g => ['lorelei', 'bruno', 'agatha', 'lance', 'champion'].includes(g.id)).map((gym) => {
+                  const isDefeated = collection.badges.includes(gym.badge);
+                  const isLeagueUnlocked = collection.badges.length >= 8;
+                  const isUnlocked = isLeagueUnlocked && (
+                    gym.id === 'lorelei' || 
+                    (gym.id === 'bruno' && collection.badges.includes("Lorelei's Badge")) ||
+                    (gym.id === 'agatha' && collection.badges.includes("Bruno's Badge")) ||
+                    (gym.id === 'lance' && collection.badges.includes("Agatha's Badge")) ||
+                    (gym.id === 'champion' && collection.badges.includes("Lance's Badge"))
+                  );
+
+                      return (
+                        <motion.div
+                          key={gym.id}
+                          whileHover={isUnlocked ? { y: -5 } : {}}
+                          className={`relative group bg-white rounded-3xl overflow-hidden border-2 shadow-lg flex flex-col ${isUnlocked ? 'border-red-600' : 'border-slate-200 opacity-60'}`}
+                        >
+                          <div className="h-32 relative overflow-hidden">
+                            <img 
+                              src={gym.bgImage} 
+                              className={`w-full h-full object-cover transition-transform duration-500 ${isUnlocked ? 'group-hover:scale-110' : 'grayscale'}`} 
+                              referrerPolicy="no-referrer"
+                            />
+                            <div className={`absolute inset-0 ${gym.color} opacity-40`} />
+                            <div className="absolute inset-0 bg-gradient-to-t from-black/60 to-transparent" />
+                            <div className="absolute bottom-4 left-4 flex items-end gap-3">
+                              <div className="w-12 h-12 bg-white/20 backdrop-blur-md rounded-xl flex items-center justify-center text-2xl shadow-inner border border-white/30">
+                                {isUnlocked ? gym.buildingIcon : '🔒'}
+                              </div>
+                              <div>
+                                <span className="px-2 py-0.5 bg-white/20 backdrop-blur-md rounded text-[8px] font-bold text-white uppercase tracking-widest mb-1 block w-fit">
+                                  {gym.id === 'champion' ? t('gym.champion') : t('gym.elite_four')}
+                                </span>
+                                <h4 className="text-white font-bold text-xl tracking-tight leading-none">{t(`gym.${gym.id}.leader`)}</h4>
+                              </div>
+                            </div>
+                            {isDefeated && (
+                              <div className="absolute top-4 right-4 bg-yellow-400 text-[#141414] px-2 py-1 rounded text-[10px] font-bold uppercase tracking-widest shadow-lg flex items-center gap-1">
+                                <span>{gym.badgeIcon}</span> {t('gym.defeated')}
+                              </div>
+                            )}
+                            {!isUnlocked && (
+                              <div className="absolute top-4 right-4 bg-slate-800 text-white px-2 py-1 rounded text-[10px] font-bold uppercase tracking-widest shadow-lg flex items-center gap-1">
+                                <Lock className="w-3 h-3" /> {t('gym.locked')}
+                              </div>
+                            )}
+                          </div>
+                          
+                          <div className="p-6 flex-1 flex flex-col">
+                                <h3 className="font-bold text-lg uppercase tracking-tight">{t(`gym.${gym.id}.name`)}</h3>
+                                <div className="flex items-center gap-2">
+                                  <span className="text-[10px]" title={`${t('battle.arena')}: ${t(`arena.${gym.arenaId}.name`)}`}>
+                                    {ARENAS.find(a => a.id === gym.arenaId)?.icon}
+                                  </span>
+                                  <TypeBadge type={gym.type} />
+                                </div>
+                            <p className="text-xs opacity-60 mb-4 flex-1 italic leading-relaxed">"{t(`gym.${gym.id}.desc`)}"</p>
+                            
+                            <div className="space-y-3">
+                              <div className="flex justify-between items-center text-[10px] font-mono border-t border-slate-100 pt-3">
+                                <span className="opacity-50 uppercase">{t('gym.team_size')}</span>
+                                <span className="font-bold">{t('gym.team_size_count', { count: gym.pokemonIds.length })}</span>
+                              </div>
+
+                              <div className="flex justify-between items-center text-[10px] font-mono">
+                                <span className="opacity-50 uppercase">{t('gym.reward')}</span>
+                                <span className="font-bold text-yellow-600 flex items-center gap-1">
+                                  <Zap className="w-3 h-3 fill-yellow-600" /> {gym.reward}
+                                </span>
+                              </div>
+                              
+                              <button
+                                disabled={!isUnlocked}
+                                onClick={() => {
+                                  if (selectedTeam.length !== gym.pokemonIds.length) {
+                                    setPendingGym(gym);
+                                    setView('select-team');
+                                    setToast({ message: t('battle.select_team_size', { count: gym.pokemonIds.length }), type: 'error' });
+                                  } else {
+                                    startGymBattle(gym, selectedTeam);
+                                  }
+                                }}
+                                className={`w-full py-3 rounded-xl font-bold uppercase tracking-widest text-xs transition-all ${
+                                  !isUnlocked
+                                    ? 'bg-slate-100 text-slate-400 cursor-not-allowed'
+                                    : isDefeated 
+                                      ? 'bg-slate-100 text-slate-400 hover:bg-slate-200' 
+                                      : 'bg-red-600 text-white hover:bg-red-700 shadow-lg'
+                                }`}
+                              >
+                                {isDefeated ? t('gym.re_challenge') : isUnlocked ? t('gym.challenge') : t('gym.locked')}
+                              </button>
+                            </div>
+                          </div>
+                        </motion.div>
+                      );
+                    })}
               </div>
             </motion.div>
           ) : view === 'select-team' ? (
@@ -1333,7 +1525,7 @@ function AppContent() {
               <div className="flex flex-col md:flex-row justify-between items-start md:items-end gap-6 mb-12">
                 <div>
                   <h2 className="text-6xl font-bold tracking-tighter italic serif">{t('team.title')}</h2>
-                  <p className="text-sm opacity-60 font-mono mt-2 uppercase">{t('team.desc', { count: selectedTeam.length })}</p>
+                  <p className="text-sm opacity-60 font-mono mt-2 uppercase">{t('team.desc', { count: pendingGym ? pendingGym.pokemonIds.length : 3 })}</p>
                   {pendingGym && (
                     <button 
                       onClick={() => {
@@ -1393,7 +1585,7 @@ function AppContent() {
                   
                   {pendingGym ? (
                     <button 
-                      disabled={selectedTeam.length !== 3}
+                      disabled={selectedTeam.length !== pendingGym.pokemonIds.length}
                       onClick={() => {
                         startGymBattle(pendingGym, selectedTeam);
                         setPendingGym(null);
@@ -1405,7 +1597,7 @@ function AppContent() {
                     </button>
                   ) : (
                     <button 
-                      disabled={selectedTeam.length !== 3}
+                      disabled={selectedTeam.length === 0}
                       onClick={() => setShowArenaModal(true)}
                       className="px-8 py-3 bg-[#141414] text-[#E4E3E0] rounded-full text-xs font-bold uppercase tracking-widest disabled:opacity-30 transition-all"
                     >
@@ -1422,13 +1614,13 @@ function AppContent() {
                     initial={{ opacity: 0 }}
                     animate={{ opacity: 1 }}
                     exit={{ opacity: 0 }}
-                    className="fixed inset-0 bg-[#E4E3E0]/90 backdrop-blur-md z-[100] flex items-center justify-center p-6"
+                    className="fixed inset-0 bg-[#E4E3E0]/90 backdrop-blur-md z-[100] overflow-y-auto p-4 sm:p-6 flex justify-center items-start sm:items-center"
                   >
                     <motion.div 
                       initial={{ scale: 0.9, opacity: 0, y: 20 }}
                       animate={{ scale: 1, opacity: 1, y: 0 }}
                       exit={{ scale: 0.9, opacity: 0, y: 20 }}
-                      className="max-w-4xl w-full bg-white rounded-3xl p-8 border-4 border-[#141414] shadow-2xl"
+                      className="relative my-auto max-w-4xl w-full bg-white rounded-3xl p-8 border-4 border-[#141414] shadow-2xl"
                     >
                       <div className="text-center mb-8">
                         <h3 className="text-4xl font-bold tracking-tighter mb-2 italic serif uppercase">
@@ -1466,7 +1658,7 @@ function AppContent() {
                               <div className="flex flex-wrap gap-1">
                                 {arena.boostedTypes.map(t_type => (
                                   <span key={t_type} className="px-2 py-0.5 bg-[#141414] text-white rounded-full text-[8px] font-bold uppercase tracking-widest">
-                                    {t(`type.${t_type.toLowerCase()}`)} +30%
+                                    {t('type.' + t_type)} +30%
                                   </span>
                                 ))}
                               </div>
@@ -1495,13 +1687,13 @@ function AppContent() {
                     initial={{ opacity: 0 }}
                     animate={{ opacity: 1 }}
                     exit={{ opacity: 0 }}
-                    className="fixed inset-0 bg-[#E4E3E0]/90 backdrop-blur-md z-[100] flex items-center justify-center p-6"
+                    className="fixed inset-0 bg-[#E4E3E0]/90 backdrop-blur-md z-[100] overflow-y-auto p-4 sm:p-6 flex justify-center items-start sm:items-center"
                   >
                     <motion.div 
                       initial={{ scale: 0.9, opacity: 0, y: 20 }}
                       animate={{ scale: 1, opacity: 1, y: 0 }}
                       exit={{ scale: 0.9, opacity: 0, y: 20 }}
-                      className="max-w-md w-full bg-white rounded-3xl p-8 border-4 border-[#141414] shadow-2xl text-center"
+                      className="relative my-auto max-w-md w-full bg-white rounded-3xl p-8 border-4 border-[#141414] shadow-2xl text-center"
                     >
                       <div className="w-16 h-16 rounded-full bg-slate-100 flex items-center justify-center mx-auto mb-6">
                         <Swords className="w-8 h-8 text-[#141414]" />
@@ -1518,7 +1710,7 @@ function AppContent() {
                           onClick={() => {
                             setIsAutoBattle(false);
                             setShowBattleModeModal(false);
-                            start3vs3Battle(selectedTeam);
+                            startStandardBattle(selectedTeam);
                           }}
                           className="w-full py-4 bg-white border-2 border-[#141414] text-[#141414] rounded-2xl font-bold uppercase tracking-widest hover:bg-slate-50 transition-all flex items-center justify-center gap-3"
                         >
@@ -1528,7 +1720,7 @@ function AppContent() {
                           onClick={() => {
                             setIsAutoBattle(true);
                             setShowBattleModeModal(false);
-                            start3vs3Battle(selectedTeam);
+                            startStandardBattle(selectedTeam);
                           }}
                           className="w-full py-4 bg-[#141414] text-[#E4E3E0] rounded-2xl font-bold uppercase tracking-widest hover:bg-slate-800 transition-all flex items-center justify-center gap-3"
                         >
@@ -1548,8 +1740,8 @@ function AppContent() {
 
               {/* Selected Team Preview */}
               <div className="flex gap-4 mb-12 overflow-x-auto pb-4">
-                {Array.from({ length: 3 }).map((_, i) => (
-                  <div key={i} className="w-32 h-48 rounded-2xl border-2 border-dashed border-[#141414]/20 flex items-center justify-center relative overflow-hidden bg-white/50">
+                {Array.from({ length: pendingGym ? pendingGym.pokemonIds.length : 3 }).map((_, i) => (
+                  <div key={i} className="min-w-[128px] w-32 h-48 rounded-2xl border-2 border-dashed border-[#141414]/20 flex items-center justify-center relative overflow-hidden bg-white/50">
                     {selectedTeam[i] ? (
                       <>
                         <img src={selectedTeam[i].image} className="w-24 h-24 object-contain" referrerPolicy="no-referrer" />
@@ -1560,7 +1752,7 @@ function AppContent() {
                           <X className="w-3 h-3" />
                         </button>
                         <div className="absolute bottom-2 left-0 right-0 text-center">
-                          <p className="text-[10px] font-bold uppercase">{selectedTeam[i].name}</p>
+                          <p className="text-[10px] font-bold uppercase">{t('pokemon.' + selectedTeam[i].id)}</p>
                         </div>
                       </>
                     ) : (
@@ -1589,12 +1781,12 @@ function AppContent() {
                         whileHover={{ y: -5 }}
                         onClick={() => {
                           if (isFainted) {
-                            setToast({ message: `${p.name} is fainted and needs healing!`, type: 'error' });
+                            setToast({ message: t('team.fainted_error', { name: t('pokemon.' + p.id) }), type: 'error' });
                             return;
                           }
                           if (isSelected) {
                             setSelectedTeam(prev => prev.filter(s => s.id !== p.id));
-                          } else if (selectedTeam.length < 3) {
+                          } else if (selectedTeam.length < (pendingGym ? pendingGym.pokemonIds.length : 3)) {
                             setSelectedTeam(prev => [...prev, p]);
                           }
                         }}
@@ -1625,7 +1817,7 @@ function AppContent() {
                               }
                             }}
                           />
-                          <p className="text-[10px] font-bold uppercase text-center">{p.name}</p>
+                          <p className="text-[10px] font-bold uppercase text-center">{t('pokemon.' + p.id)}</p>
                           
                           {/* HP Bar */}
                           <div className="w-full mt-2">
@@ -1815,7 +2007,7 @@ function AppContent() {
                       {p.collected ? (
                         <img 
                           src={p.image} 
-                          alt={p.name} 
+                          alt={t('pokemon.' + p.id)} 
                           className="w-full h-full object-contain drop-shadow-md"
                           referrerPolicy="no-referrer"
                           onError={(e) => {
@@ -1829,14 +2021,14 @@ function AppContent() {
                         />
                       ) : (
                         <div className="text-[10px] font-mono text-center opacity-20 uppercase tracking-tighter">
-                          Missing
+                          {t('collection.missing')}
                         </div>
                       )}
                     </div>
 
                     <div className="mt-2 text-center flex flex-col items-center">
                       <p className={`text-[10px] font-bold truncate w-full ${p.collected ? 'text-[#141414]' : 'text-[#141414]/40'}`}>
-                        {p.collected ? p.name.toUpperCase() : '???'}
+                        {p.collected ? t('pokemon.' + p.id).toUpperCase() : '???'}
                       </p>
                       {p.collected && (
                         <div className="flex flex-col items-center w-full mt-1">
@@ -1900,7 +2092,7 @@ function AppContent() {
                           onClick={(e) => { e.stopPropagation(); useItem('potion', p); }}
                           className="flex-1 py-1 bg-emerald-50 text-emerald-600 border border-emerald-200 rounded-lg text-[8px] font-bold uppercase hover:bg-emerald-100 transition-colors"
                         >
-                          Potion
+                          {t('item.potion.name')}
                         </button>
                       )}
                       {hasSuperPotion && (
@@ -1908,7 +2100,7 @@ function AppContent() {
                           onClick={(e) => { e.stopPropagation(); useItem('super-potion', p); }}
                           className="flex-1 py-1 bg-emerald-50 text-emerald-600 border border-emerald-200 rounded-lg text-[8px] font-bold uppercase hover:bg-emerald-100 transition-colors"
                         >
-                          Super
+                          {t('item.super-potion.name')}
                         </button>
                       )}
                       {!hasPotion && !hasSuperPotion && hasFullRestore && (
@@ -1916,7 +2108,7 @@ function AppContent() {
                           onClick={(e) => { e.stopPropagation(); useItem('full-restore', p); }}
                           className="flex-1 py-1 bg-emerald-50 text-emerald-600 border border-emerald-200 rounded-lg text-[8px] font-bold uppercase hover:bg-emerald-100 transition-colors"
                         >
-                          Full
+                          {t('item.full-restore.name')}
                         </button>
                       )}
                     </div>
@@ -1959,55 +2151,72 @@ function AppContent() {
                       {t('shop.tab.sell')}
                     </button>
                   </div>
+
+                  <button 
+                    onClick={claimDailyReward}
+                    className={`mt-6 px-6 py-2 rounded-full text-xs font-bold transition-all flex items-center gap-2 ${
+                      (Date.now() - (collection.lastDailyReward || 0) < 24 * 60 * 60 * 1000)
+                        ? 'bg-slate-100 text-slate-400 cursor-not-allowed'
+                        : 'bg-amber-100 text-amber-700 hover:bg-amber-200 animate-pulse'
+                    }`}
+                  >
+                    <Gift className="w-4 h-4" />
+                    {Date.now() - (collection.lastDailyReward || 0) < 24 * 60 * 60 * 1000 
+                      ? t('shop.claimed') 
+                      : t('shop.claim')}
+                  </button>
                 </div>
 
-                <div className="flex flex-wrap gap-4 w-full md:w-auto">
-                  <div className="relative flex-1 sm:w-48">
-                    <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 opacity-40" />
-                    <input 
-                      type="text" 
-                      placeholder={t('shop.search_placeholder')}
-                      value={searchTerm}
-                      onChange={(e) => setSearchTerm(e.target.value)}
-                      className="w-full pl-10 pr-4 py-3 bg-[#141414]/5 border-b border-[#141414] focus:outline-none focus:bg-[#141414]/10 transition-all text-sm font-mono"
-                    />
-                  </div>
+                {shopTab !== 'items' && (
+                  <div className="flex flex-wrap gap-4 w-full md:w-auto">
+                    <div className="relative flex-1 sm:w-48">
+                      <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 opacity-40" />
+                      <input 
+                        type="text" 
+                        placeholder={t('shop.search_placeholder')}
+                        value={searchTerm}
+                        onChange={(e) => setSearchTerm(e.target.value)}
+                        className="w-full pl-10 pr-4 py-3 bg-[#141414]/5 border-b border-[#141414] focus:outline-none focus:bg-[#141414]/10 transition-all text-sm font-mono"
+                      />
+                    </div>
 
-                  <select 
-                    value={typeFilter}
-                    onChange={(e) => setTypeFilter(e.target.value)}
-                    className="px-4 py-3 bg-[#141414]/5 border-b border-[#141414] focus:outline-none text-xs font-bold uppercase tracking-widest"
-                  >
-                    {allTypes.map(tType => <option key={tType} value={tType}>{tType === 'All' ? t('collection.all_types') : t(`type.${tType}`)}</option>)}
-                  </select>
-
-                  <select 
-                    value={rarityFilter}
-                    onChange={(e) => setRarityFilter(e.target.value)}
-                    className="px-4 py-3 bg-[#141414]/5 border-b border-[#141414] focus:outline-none text-xs font-bold uppercase tracking-widest"
-                  >
-                    <option value="All">{t('collection.all_rarities')}</option>
-                    <option value="Common">{t('rarity.Common')}</option>
-                    <option value="Rare">{t('rarity.Rare')}</option>
-                    <option value="Legendary">{t('rarity.Legendary')}</option>
-                  </select>
-
-                  {shopTab === 'buy' && (
-                    <button 
-                      onClick={refreshShop}
-                      className="flex items-center gap-2 px-6 py-3 bg-[#141414] text-[#E4E3E0] rounded-full text-xs font-bold uppercase tracking-widest hover:scale-105 transition-all"
+                    <select 
+                      value={typeFilter}
+                      onChange={(e) => setTypeFilter(e.target.value)}
+                      className="px-4 py-3 bg-[#141414]/5 border-b border-[#141414] focus:outline-none text-xs font-bold uppercase tracking-widest"
                     >
-                      <RefreshCw className="w-4 h-4" />
-                      Refresh
-                    </button>
-                  )}
-                </div>
+                      {allTypes.map(tType => <option key={tType} value={tType}>{tType === 'All' ? t('collection.all_types') : t(`type.${tType}`)}</option>)}
+                    </select>
+
+                    <select 
+                      value={rarityFilter}
+                      onChange={(e) => setRarityFilter(e.target.value)}
+                      className="px-4 py-3 bg-[#141414]/5 border-b border-[#141414] focus:outline-none text-xs font-bold uppercase tracking-widest"
+                    >
+                      <option value="All">{t('collection.all_rarities')}</option>
+                      <option value="Common">{t('rarity.Common')}</option>
+                      <option value="Rare">{t('rarity.Rare')}</option>
+                      <option value="Legendary">{t('rarity.Legendary')}</option>
+                    </select>
+
+                    {shopTab === 'buy' && (
+                      <button 
+                        onClick={refreshShop}
+                        className="flex items-center gap-2 px-6 py-3 bg-[#141414] text-[#E4E3E0] rounded-full text-xs font-bold uppercase tracking-widest hover:scale-105 transition-all"
+                      >
+                        <RefreshCw className="w-4 h-4" />
+                        Refresh
+                      </button>
+                    )}
+                  </div>
+                )}
               </div>
 
               {shopTab === 'buy' ? (
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-8">
                   {shopCards.filter(p => {
-                    const matchesSearch = p.name.toLowerCase().includes(searchTerm.toLowerCase()) || p.id.toString().includes(searchTerm);
+                    const translatedName = t('pokemon.' + p.id).toLowerCase();
+                    const matchesSearch = translatedName.includes(searchTerm.toLowerCase()) || p.name.toLowerCase().includes(searchTerm.toLowerCase()) || p.id.toString().includes(searchTerm);
                     const matchesType = typeFilter === 'All' || p.types.includes(typeFilter);
                     const matchesRarity = rarityFilter === 'All' || p.rarity === rarityFilter;
                     return matchesSearch && matchesType && matchesRarity;
@@ -2023,10 +2232,10 @@ function AppContent() {
                             p.rarity === 'Legendary' ? 'bg-purple-100 text-purple-600' : 
                             p.rarity === 'Rare' ? 'bg-blue-100 text-blue-600' : 'bg-slate-100 text-slate-600'
                           }`}>
-                            {p.rarity}
+                            {t('rarity.' + p.rarity)}
                           </span>
                           <span className="text-[8px] font-mono opacity-50 uppercase tracking-widest ml-1">
-                            Owned: {collection.cards[p.id] || 0}
+                            {t('shop.owned', { count: collection.cards[p.id] || 0 })}
                           </span>
                         </div>
                         <div className="flex items-center gap-1 text-yellow-600 font-bold">
@@ -2047,16 +2256,16 @@ function AppContent() {
                           }
                         }}
                       />
-                      <h3 className="text-2xl font-bold tracking-tight mb-1 uppercase">{p.name}</h3>
+                      <h3 className="text-2xl font-bold tracking-tight mb-1 uppercase">{t('pokemon.' + p.id)}</h3>
                       <div className="flex gap-2 mb-6">
-                        {p.types.map(t => <TypeBadge key={t} type={t} />)}
+                        {p.types.map(t_type => <TypeBadge key={t_type} type={t_type} />)}
                       </div>
                       <button 
                         onClick={() => buyCard(p)}
                         disabled={collection.coins < getPrice(p.rarity, false)}
                         className="w-full py-4 bg-[#141414] text-[#E4E3E0] rounded-2xl font-bold uppercase tracking-widest text-xs disabled:opacity-30 hover:bg-emerald-600 transition-colors"
                       >
-                        {collection.coins >= getPrice(p.rarity, false) ? 'BUY CARD' : 'NOT ENOUGH COINS'}
+                        {collection.coins >= getPrice(p.rarity, false) ? t('shop.buy_card') : t('shop.no_coins')}
                       </button>
                     </motion.div>
                   ))}
@@ -2083,19 +2292,19 @@ function AppContent() {
                         {item.icon}
                       </div>
                       
-                      <h3 className="text-2xl font-bold tracking-tight mb-2 uppercase">{item.name}</h3>
-                      <p className="text-xs opacity-60 mb-8 max-w-[200px]">{item.description}</p>
+                      <h3 className="text-2xl font-bold tracking-tight mb-2 uppercase">{t('item.' + item.id + '.name')}</h3>
+                      <p className="text-xs opacity-60 mb-8 max-w-[200px]">{t('item.' + item.id + '.desc')}</p>
                       
                       <div className="w-full mt-auto">
                         <div className="text-[10px] font-bold opacity-30 uppercase tracking-widest mb-4">
-                          In Bag: {collection.inventory[item.id] || 0}
+                          {t('shop.in_bag', { count: collection.inventory[item.id] || 0 })}
                         </div>
                         <button 
                           onClick={() => buyItem(item)}
                           disabled={collection.coins < item.price}
                           className="w-full py-4 bg-[#141414] text-[#E4E3E0] rounded-2xl font-bold uppercase tracking-widest text-xs disabled:opacity-30 hover:bg-emerald-600 transition-colors"
                         >
-                          {collection.coins >= item.price ? 'BUY ITEM' : 'NOT ENOUGH COINS'}
+                          {collection.coins >= item.price ? t('shop.buy_item') : t('shop.no_coins')}
                         </button>
                       </div>
                     </motion.div>
@@ -2122,7 +2331,7 @@ function AppContent() {
                       <div className="flex-1 flex items-center justify-center relative">
                         <img 
                           src={p.image} 
-                          alt={p.name} 
+                          alt={t('pokemon.' + p.id)} 
                           className="w-full h-full object-contain drop-shadow-md"
                           referrerPolicy="no-referrer"
                           onError={(e) => {
@@ -2138,7 +2347,7 @@ function AppContent() {
 
                       <div className="mt-2 text-center flex flex-col items-center">
                         <p className="text-[10px] font-bold truncate text-[#141414]">
-                          {p.name.toUpperCase()}
+                          {t('pokemon.' + p.id).toUpperCase()}
                         </p>
                         <div className="flex flex-col items-center w-full mt-1">
                           <span className="text-[8px] font-mono bg-[#141414] text-[#E4E3E0] px-1.5 rounded-full">
@@ -2170,6 +2379,10 @@ function AppContent() {
                 </div>
               )}
             </motion.div>
+          ) : view === 'guide' ? (
+            <Suspense fallback={<div className="flex items-center justify-center py-20"><RefreshCw className="w-12 h-12 animate-spin text-[#141414]" /></div>}>
+              <GuideView />
+            </Suspense>
           ) : (
             <motion.div 
               key="battle-view"
@@ -2195,35 +2408,18 @@ function AppContent() {
                 <div className="absolute inset-0 bg-gradient-to-b from-[#E4E3E0] via-transparent to-[#E4E3E0]" />
               </div>
 
-              <div className="relative z-10 w-full flex flex-col items-center">
-                {/* Floating Auto Battle Toggle for Mobile */}
-              <div className="fixed bottom-24 right-6 z-40 sm:hidden">
-                <button
-                  onClick={() => setIsAutoBattle(!isAutoBattle)}
-                  className={`w-14 h-14 rounded-full flex items-center justify-center shadow-2xl transition-all ${
-                    isAutoBattle 
-                      ? 'bg-red-500 text-white animate-pulse' 
-                      : 'bg-[#141414] text-[#E4E3E0]'
-                  }`}
-                >
-                  <Zap className={`w-6 h-6 ${isAutoBattle ? 'fill-white' : ''}`} />
-                </button>
-                <div className="absolute -top-8 left-1/2 -translate-x-1/2 whitespace-nowrap bg-[#141414] text-[#E4E3E0] text-[8px] font-bold px-2 py-1 rounded uppercase tracking-widest">
-                  {isAutoBattle ? t('battle.auto_on') : t('battle.auto_off')}
-                </div>
-              </div>
-
-              <div className="w-full flex flex-col sm:flex-row justify-between items-center gap-4 mb-8 md:mb-12">
+              <div className="relative z-10 w-full flex flex-col items-center px-4">
+                <div className="w-full flex flex-col sm:flex-row justify-between items-center gap-4 mb-4 sm:mb-8 md:mb-12 landscape:flex-row landscape:mb-4">
                 <button 
                   onClick={() => setView('collection')}
-                  className="flex items-center gap-2 text-[#141414] hover:opacity-60 transition-opacity font-bold uppercase tracking-widest text-sm"
+                  className="flex items-center gap-2 text-[#141414] hover:opacity-60 transition-opacity font-bold uppercase tracking-widest text-xs sm:text-sm"
                 >
-                  <ArrowLeft className="w-5 h-5" /> {t('battle.quit')}
+                  <ArrowLeft className="w-4 h-4 sm:w-5 sm:h-5" /> {t('battle.quit')}
                 </button>
-                <div className="flex flex-wrap justify-center items-center gap-3 sm:gap-4">
+                <div className="flex flex-wrap justify-center items-center gap-2 sm:gap-4">
                   <button
                     onClick={() => setIsAutoBattle(!isAutoBattle)}
-                    className={`px-4 sm:px-6 py-2 rounded-full font-bold uppercase tracking-widest text-[10px] sm:text-xs transition-all ${
+                    className={`px-3 sm:px-6 py-1.5 sm:py-2 rounded-full font-bold uppercase tracking-widest text-[8px] sm:text-xs transition-all ${
                       isAutoBattle 
                         ? 'bg-red-500 text-white shadow-[0_0_15px_rgba(239,68,68,0.4)]' 
                         : 'bg-[#141414] text-[#E4E3E0] hover:bg-slate-800'
@@ -2231,51 +2427,51 @@ function AppContent() {
                   >
                     {isAutoBattle ? t('battle.auto_on') : t('battle.auto_off')}
                   </button>
-                  <div className="px-3 sm:px-4 py-2 bg-white border border-[#141414] rounded-full text-[10px] sm:text-xs font-bold uppercase tracking-widest flex items-center gap-2">
+                  <div className="px-2 sm:px-4 py-1.5 sm:py-2 bg-white border border-[#141414] rounded-full text-[8px] sm:text-xs font-bold uppercase tracking-widest flex items-center gap-1 sm:gap-2">
                     <span>{battleState.selectedArena.icon}</span>
                     {t(`arena.${battleState.selectedArena.id}.name`)}
                   </div>
                 </div>
               </div>
 
-              <div className="w-full grid grid-cols-1 md:grid-cols-2 gap-12 items-start">
+              <div className="w-full grid grid-cols-1 sm:grid-cols-2 landscape:grid-cols-2 gap-4 sm:gap-8 md:gap-12 items-start">
                 {/* Player Side */}
-                <div className="flex flex-col items-center gap-6">
+                <div className="flex flex-col items-center gap-3 sm:gap-6">
                   {/* Bench / Waiting Area */}
-                  <div className="w-full h-16 flex justify-center gap-2 mb-2">
+                  <div className="w-full h-10 sm:h-16 flex justify-center gap-1 sm:gap-2 mb-1">
                     {battleState.playerTeam.map((p, i) => (
                       <motion.div 
                         key={i}
                         animate={{ 
-                          scale: i === battleState.currentPlayerIndex ? 1.2 : 1,
+                          scale: i === battleState.currentPlayerIndex ? 1.1 : 1,
                           opacity: i < battleState.currentPlayerIndex ? 0.5 : 1,
                           borderColor: i === battleState.currentPlayerIndex ? '#ef4444' : '#141414'
                         }}
-                        className={`w-12 h-12 rounded-lg border-2 bg-white flex items-center justify-center overflow-hidden shadow-sm ${i === battleState.currentPlayerIndex ? 'ring-2 ring-red-500/20' : ''}`}
+                        className={`w-8 h-8 sm:w-12 sm:h-12 rounded-lg border-2 bg-white flex items-center justify-center overflow-hidden shadow-sm relative ${i === battleState.currentPlayerIndex ? 'ring-2 ring-red-500/20' : ''}`}
                       >
-                        <img src={p.image} className="w-10 h-10 object-contain" referrerPolicy="no-referrer" />
+                        <img src={p.image} className="w-6 h-6 sm:w-10 sm:h-10 object-contain" referrerPolicy="no-referrer" />
                         {i < battleState.currentPlayerIndex && (
                           <div className="absolute inset-0 bg-slate-900/40 flex items-center justify-center">
-                            <X className="w-6 h-6 text-white" />
+                            <X className="w-4 h-4 sm:w-6 sm:h-6 text-white" />
                           </div>
                         )}
                       </motion.div>
                     ))}
                   </div>
 
-                  <div className="w-full h-24 bg-white rounded-2xl p-4 border border-[#141414] shadow-lg">
-                    <div className="flex justify-between items-center mb-2">
+                  <div className="w-full h-16 sm:h-24 bg-white rounded-xl sm:rounded-2xl p-2 sm:p-4 border border-[#141414] shadow-lg">
+                    <div className="flex justify-between items-center mb-1">
                       <div className="flex flex-col">
-                        <span className="font-bold text-sm uppercase tracking-widest">{t('battle.player_team')}</span>
+                        <span className="font-bold text-[8px] sm:text-sm uppercase tracking-widest">{t('battle.player_team')}</span>
                       </div>
-                      <div className="flex items-center gap-2">
-                        <Heart className="w-4 h-4 text-red-500 fill-red-500" />
-                        <span className="font-mono font-bold">
+                      <div className="flex items-center gap-1 sm:gap-2">
+                        <Heart className="w-2.5 h-2.5 sm:w-4 sm:h-4 text-red-500 fill-red-500" />
+                        <span className="font-mono font-bold text-[10px] sm:text-base">
                           {battleState.playerHp[battleState.currentPlayerIndex]} / {battleState.playerTeam[battleState.currentPlayerIndex]?.hp}
                         </span>
                       </div>
                     </div>
-                    <div className="w-full h-2 bg-slate-100 rounded-full overflow-hidden">
+                    <div className="w-full h-1 sm:h-2 bg-slate-100 rounded-full overflow-hidden">
                       <motion.div 
                         className="h-full bg-green-500"
                         initial={{ width: '100%' }}
@@ -2284,7 +2480,7 @@ function AppContent() {
                     </div>
                   </div>
                   
-                  <div className="h-[400px] flex items-center justify-center relative w-full">
+                  <div className="h-[200px] sm:h-[400px] landscape:h-[250px] flex items-center justify-center relative w-full">
                     <AnimatePresence mode="wait">
                       {battleState.playerTeam[battleState.currentPlayerIndex] && (
                         <motion.div
@@ -2297,7 +2493,7 @@ function AppContent() {
                             rotate: 20,
                             transition: { duration: 0.8, ease: "easeIn" }
                           }}
-                          className="relative"
+                          className="relative scale-50 sm:scale-100 landscape:scale-60"
                         >
                           <Card 
                             pokemon={battleState.playerTeam[battleState.currentPlayerIndex]!} 
@@ -2316,7 +2512,7 @@ function AppContent() {
                                 initial={{ opacity: 0, y: 0, scale: 0.5 }}
                                 animate={{ opacity: 1, y: -100, scale: 1.5 }}
                                 exit={{ opacity: 0 }}
-                                className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 z-50 text-red-600 font-black text-6xl drop-shadow-[0_0_10px_rgba(255,255,255,0.8)] pointer-events-none"
+                                className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 z-50 text-red-600 font-black text-4xl sm:text-6xl drop-shadow-[0_0_10px_rgba(255,255,255,0.8)] pointer-events-none"
                               >
                                 -{battleState.damageNumber.value}
                               </motion.div>
@@ -2327,16 +2523,16 @@ function AppContent() {
                     </AnimatePresence>
                   </div>
                   
-                  <div className="grid grid-cols-2 gap-4 w-full">
+                  <div className="grid grid-cols-2 gap-2 sm:gap-4 w-full">
                     {battleState.playerTeam[battleState.currentPlayerIndex]?.moves.map((move, idx) => (
                       <button
                         key={idx}
                         disabled={battleState.turn !== 'player' || battleState.isFinished}
                         onClick={() => handleAttack(move)}
-                        className="p-4 bg-[#141414] text-[#E4E3E0] rounded-xl font-bold flex flex-col items-center gap-1 hover:bg-slate-800 disabled:opacity-50 transition-all group relative overflow-hidden"
+                        className="p-2 sm:p-4 bg-[#141414] text-[#E4E3E0] rounded-lg sm:rounded-xl font-bold flex flex-col items-center gap-0.5 sm:gap-1 hover:bg-slate-800 disabled:opacity-50 transition-all group relative overflow-hidden"
                       >
-                        <span className="text-xs uppercase relative z-10">{t(`move.${move.name.toLowerCase().replace(/ /g, '_')}`)}</span>
-                        <span className="text-[10px] font-mono opacity-60 relative z-10">{t('detail.dmg')}: {move.damage} | {t(`type.${move.type}`)}</span>
+                        <span className="text-[8px] sm:text-xs relative z-10">{t('move.' + move.name)}</span>
+                        <span className="text-[7px] sm:text-[10px] font-mono opacity-60 relative z-10">{t('detail.dmg')}: {move.damage} | {t(`type.${move.type}`)}</span>
                         <div className="absolute inset-0 bg-white/10 translate-y-full group-hover:translate-y-0 transition-transform" />
                       </button>
                     ))}
@@ -2344,44 +2540,44 @@ function AppContent() {
                 </div>
 
                 {/* Opponent Side */}
-                <div className="flex flex-col items-center gap-6">
+                <div className="flex flex-col items-center gap-3 sm:gap-6">
                   {/* Bench / Waiting Area */}
-                  <div className="w-full h-16 flex justify-center gap-2 mb-2">
+                  <div className="w-full h-10 sm:h-16 flex justify-center gap-1 sm:gap-2 mb-1">
                     {battleState.opponentTeam.map((p, i) => (
                       <motion.div 
                         key={i}
                         animate={{ 
-                          scale: i === battleState.currentOpponentIndex ? 1.2 : 1,
+                          scale: i === battleState.currentOpponentIndex ? 1.1 : 1,
                           opacity: i < battleState.currentOpponentIndex ? 0.5 : 1,
                           borderColor: i === battleState.currentOpponentIndex ? '#ef4444' : '#141414'
                         }}
-                        className={`w-12 h-12 rounded-lg border-2 bg-white flex items-center justify-center overflow-hidden shadow-sm ${i === battleState.currentOpponentIndex ? 'ring-2 ring-red-500/20' : ''}`}
+                        className={`w-8 h-8 sm:w-12 sm:h-12 rounded-lg border-2 bg-white flex items-center justify-center overflow-hidden shadow-sm relative ${i === battleState.currentOpponentIndex ? 'ring-2 ring-red-500/20' : ''}`}
                       >
-                        <img src={p.image} className="w-10 h-10 object-contain" referrerPolicy="no-referrer" />
+                        <img src={p.image} className="w-6 h-6 sm:w-10 sm:h-10 object-contain" referrerPolicy="no-referrer" />
                         {i < battleState.currentOpponentIndex && (
                           <div className="absolute inset-0 bg-slate-900/40 flex items-center justify-center">
-                            <X className="w-6 h-6 text-white" />
+                            <X className="w-4 h-4 sm:w-6 sm:h-6 text-white" />
                           </div>
                         )}
                       </motion.div>
                     ))}
                   </div>
 
-                  <div className="w-full h-24 bg-white rounded-2xl p-4 border border-[#141414] shadow-lg">
-                    <div className="flex justify-between items-center mb-2">
+                  <div className="w-full h-16 sm:h-24 bg-white rounded-xl sm:rounded-2xl p-2 sm:p-4 border border-[#141414] shadow-lg">
+                    <div className="flex justify-between items-center mb-1">
                       <div className="flex flex-col">
-                        <span className="font-bold text-sm uppercase tracking-widest">
+                        <span className="font-bold text-[8px] sm:text-sm uppercase tracking-widest">
                           {battleState.currentGym ? t('battle.leader', { leader: battleState.currentGym.leader }) : t('battle.opponent_team')}
                         </span>
                       </div>
-                      <div className="flex items-center gap-2">
-                        <Heart className="w-4 h-4 text-red-500 fill-red-500" />
-                        <span className="font-mono font-bold">
+                      <div className="flex items-center gap-1 sm:gap-2">
+                        <Heart className="w-2.5 h-2.5 sm:w-4 sm:h-4 text-red-500 fill-red-500" />
+                        <span className="font-mono font-bold text-[10px] sm:text-base">
                           {battleState.opponentHp[battleState.currentOpponentIndex]} / {battleState.opponentTeam[battleState.currentOpponentIndex]?.hp}
                         </span>
                       </div>
                     </div>
-                    <div className="w-full h-2 bg-slate-100 rounded-full overflow-hidden">
+                    <div className="w-full h-1 sm:h-2 bg-slate-100 rounded-full overflow-hidden">
                       <motion.div 
                         className="h-full bg-red-500"
                         initial={{ width: '100%' }}
@@ -2390,7 +2586,7 @@ function AppContent() {
                     </div>
                   </div>
 
-                  <div className="h-[400px] flex items-center justify-center relative w-full">
+                  <div className="h-[200px] sm:h-[400px] landscape:h-[250px] flex items-center justify-center relative w-full">
                     <AnimatePresence mode="wait">
                       {battleState.opponentTeam[battleState.currentOpponentIndex] && (
                         <motion.div
@@ -2403,7 +2599,7 @@ function AppContent() {
                             rotate: -20,
                             transition: { duration: 0.8, ease: "easeIn" }
                           }}
-                          className="relative"
+                          className="relative scale-50 sm:scale-100 landscape:scale-60"
                         >
                           <Card 
                             pokemon={battleState.opponentTeam[battleState.currentOpponentIndex]!} 
@@ -2422,7 +2618,7 @@ function AppContent() {
                                 initial={{ opacity: 0, y: 0, scale: 0.5 }}
                                 animate={{ opacity: 1, y: -100, scale: 1.5 }}
                                 exit={{ opacity: 0 }}
-                                className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 z-50 text-red-600 font-black text-6xl drop-shadow-[0_0_10px_rgba(255,255,255,0.8)] pointer-events-none"
+                                className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 z-50 text-red-600 font-black text-4xl sm:text-6xl drop-shadow-[0_0_10px_rgba(255,255,255,0.8)] pointer-events-none"
                               >
                                 -{battleState.damageNumber.value}
                               </motion.div>
@@ -2433,8 +2629,8 @@ function AppContent() {
                     </AnimatePresence>
                   </div>
                   
-          <div className="w-full h-32 bg-[#141414]/5 rounded-2xl p-4 overflow-y-auto font-mono text-[10px] space-y-1 border border-[#141414]/10">
-            <p className="opacity-40 uppercase mb-2">{t('battle.logs')}</p>
+          <div className="w-full h-24 sm:h-32 bg-[#141414]/5 rounded-xl sm:rounded-2xl p-2 sm:p-4 overflow-y-auto font-mono text-[8px] sm:text-[10px] space-y-1 border border-[#141414]/10">
+            <p className="opacity-40 uppercase mb-1 sm:mb-2">{t('battle.logs')}</p>
             {battleState.logs.map((log, idx) => (
               <p key={idx} className={`border-l-2 pl-2 ${log.includes(t('battle.super_effective')) ? 'text-green-600 border-green-600 font-bold' : log.includes(t('battle.not_effective')) ? 'text-orange-600 border-orange-600' : 'border-[#141414]'}`}>{log}</p>
             ))}
@@ -2447,9 +2643,9 @@ function AppContent() {
                 <motion.div 
                   initial={{ scale: 0.9, opacity: 0 }}
                   animate={{ scale: 1, opacity: 1 }}
-                  className="fixed inset-0 bg-[#E4E3E0]/90 backdrop-blur-md z-[100] flex items-center justify-center p-6"
+                  className="fixed inset-0 bg-[#E4E3E0]/90 backdrop-blur-md z-[100] overflow-y-auto p-4 sm:p-6 flex justify-center items-start sm:items-center"
                 >
-                  <div className="max-w-md w-full bg-white rounded-3xl p-8 border-4 border-[#141414] shadow-2xl text-center">
+                  <div className="relative my-auto max-w-md w-full bg-white rounded-3xl p-8 border-4 border-[#141414] shadow-2xl text-center">
                     <div className={`w-20 h-20 rounded-full flex items-center justify-center mx-auto mb-6 ${battleState.winner === 'player' ? 'bg-green-100 text-green-600' : 'bg-red-100 text-red-600'}`}>
                       <Swords className="w-10 h-10" />
                     </div>
@@ -2521,19 +2717,19 @@ function AppContent() {
 
       {/* Detail Modal */}
       <AnimatePresence>
-        {selectedPokemon && (
+        {currentSelectedPokemon && (
           <motion.div 
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            className="fixed inset-0 z-[100] flex items-center justify-center p-6 bg-[#141414]/90 backdrop-blur-md"
+            className="fixed inset-0 z-[100] overflow-y-auto p-4 sm:p-6 bg-[#141414]/90 backdrop-blur-md flex justify-center items-start sm:items-center"
             onClick={() => setSelectedPokemon(null)}
           >
             <motion.div 
               initial={{ scale: 0.8, y: 20 }}
               animate={{ scale: 1, y: 0 }}
               exit={{ scale: 0.8, y: 20 }}
-              className="relative max-w-4xl w-full flex flex-col md:flex-row gap-12 items-center bg-[#141414] p-8 md:p-12 rounded-[2rem] border-2 border-[#E4E3E0]/20 max-h-[90vh] overflow-y-auto no-scrollbar"
+              className="relative my-auto max-w-4xl w-full flex flex-col md:flex-row gap-12 items-center bg-[#141414] p-8 md:p-12 rounded-[2rem] border-2 border-[#E4E3E0]/20"
               onClick={(e) => e.stopPropagation()}
             >
               <button 
@@ -2567,22 +2763,22 @@ function AppContent() {
                     transition={{ duration: 1.5 }}
                   >
                     <Card 
-                      pokemon={selectedPokemon} 
+                      pokemon={currentSelectedPokemon} 
                       isFlipped={true} 
                       size="large"
                       playSound={playSound}
-                      isHealing={healingPokemonId === selectedPokemon.id}
-                      currentHp={collection.hpMap?.[selectedPokemon.id] ?? selectedPokemon.hp}
+                      isHealing={healingPokemonId === currentSelectedPokemon.id}
+                      currentHp={collection.hpMap?.[currentSelectedPokemon.id] ?? currentSelectedPokemon.hp}
                     />
                   </motion.div>
               </div>
 
               <div className="flex-1 text-[#E4E3E0]">
                 <div className="mb-8">
-                  <span className="text-xs font-mono opacity-50 uppercase tracking-widest">{t('detail.pokedexEntry')} #{selectedPokemon.id.toString().padStart(3, '0')}</span>
-                  <h2 className="text-6xl font-bold tracking-tighter italic serif mt-2">{t(`pokemon.${selectedPokemon.id}`)}</h2>
+                  <span className="text-xs font-mono opacity-50 uppercase tracking-widest">{t('detail.pokedexEntry')} #{currentSelectedPokemon.id.toString().padStart(3, '0')}</span>
+                  <h2 className="text-6xl font-bold tracking-tighter italic serif mt-2">{t(`pokemon.${currentSelectedPokemon.id}`)}</h2>
                   <div className="flex gap-2 mt-4">
-                    {selectedPokemon.types.map(tType => <TypeBadge key={tType} type={tType} />)}
+                    {currentSelectedPokemon.types.map(tType => <TypeBadge key={tType} type={tType} />)}
                   </div>
                 </div>
 
@@ -2591,22 +2787,22 @@ function AppContent() {
                     <p className="text-[10px] font-mono opacity-50 uppercase tracking-widest">{t('detail.hpStat')}</p>
                     <p className="text-xl font-bold mt-1 flex items-center gap-2">
                       <Heart className="w-5 h-5 text-red-500" /> 
-                      <span className={((collection.hpMap?.[selectedPokemon.id] ?? selectedPokemon.hp) < selectedPokemon.hp) ? 'text-red-400' : ''}>
-                        {collection.hpMap?.[selectedPokemon.id] ?? selectedPokemon.hp}
+                      <span className={((collection.hpMap?.[currentSelectedPokemon.id] ?? currentSelectedPokemon.hp) < currentSelectedPokemon.hp) ? 'text-red-400' : ''}>
+                        {collection.hpMap?.[currentSelectedPokemon.id] ?? currentSelectedPokemon.hp}
                       </span>
-                      <span className="opacity-30">/ {selectedPokemon.hp}</span>
+                      <span className="opacity-30">/ {currentSelectedPokemon.hp}</span>
                     </p>
                   </div>
                   <div className="border-l border-[#E4E3E0]/20 pl-4">
                     <p className="text-[10px] font-mono opacity-50 uppercase tracking-widest">{t('detail.defense')}</p>
                     <p className="text-xl font-bold mt-1 flex items-center gap-2">
-                      <Swords className="w-5 h-5 text-slate-400" /> {selectedPokemon.defense}
+                      <Swords className="w-5 h-5 text-slate-400" /> {currentSelectedPokemon.defense}
                     </p>
                   </div>
                   <div className="border-l border-[#E4E3E0]/20 pl-4">
                     <p className="text-[10px] font-mono opacity-50 uppercase tracking-widest">{t('detail.speed')}</p>
                     <p className="text-xl font-bold mt-1 flex items-center gap-2">
-                      <Zap className="w-5 h-5 text-yellow-500" /> {selectedPokemon.speed}
+                      <Zap className="w-5 h-5 text-yellow-500" /> {currentSelectedPokemon.speed}
                     </p>
                   </div>
                 </div>
@@ -2614,11 +2810,11 @@ function AppContent() {
                 <div className="mb-8">
                   <p className="text-[10px] font-mono opacity-50 uppercase tracking-widest mb-4">{t('detail.availableMoves')}</p>
                   <div className="grid grid-cols-1 gap-2">
-                    {selectedPokemon.moves.map((move, idx) => (
+                    {currentSelectedPokemon.moves.map((move, idx) => (
                       <div key={idx} className="flex justify-between items-center bg-white/5 p-3 rounded-xl border border-white/10">
                         <div className="flex flex-col">
-                          <span className="text-sm font-bold uppercase tracking-widest">{t(`move.${move.name.toLowerCase().replace(/ /g, '_')}`)}</span>
-                          <span className="text-[10px] opacity-40 uppercase">{t(`type.${move.type.toLowerCase()}`)} {t('detail.moveType')}</span>
+                          <span className="text-sm font-bold tracking-widest">{t('move.' + move.name)}</span>
+                          <span className="text-[10px] opacity-40 uppercase">{t('type.' + move.type)} {t('detail.moveType')}</span>
                         </div>
                         <span className="text-xl font-mono font-bold text-red-400">{move.damage} {t('detail.dmg')}</span>
                       </div>
@@ -2635,7 +2831,7 @@ function AppContent() {
                       return (
                         <button
                           key={item.id}
-                          onClick={() => useItem(item.id, selectedPokemon)}
+                          onClick={() => useItem(item.id, currentSelectedPokemon)}
                           className="flex items-center gap-2 bg-white/10 hover:bg-white/20 p-2 rounded-xl border border-white/10 transition-all group"
                         >
                           <span className="text-xl">{item.icon}</span>
@@ -2653,29 +2849,29 @@ function AppContent() {
                 </div>
 
                 <div className="flex flex-col gap-4">
-                  {EVOLUTION_MAP[selectedPokemon.id] && (
+                  {EVOLUTION_MAP[currentSelectedPokemon.id] && (
                     <button 
-                      onClick={() => handleEvolve(selectedPokemon)}
+                      onClick={() => handleEvolve(currentSelectedPokemon)}
                       className="w-full py-4 bg-purple-600 text-white rounded-full font-bold hover:bg-purple-700 transition-all uppercase tracking-widest text-xs flex items-center justify-center gap-2 shadow-[0_0_15px_rgba(168,85,247,0.4)]"
                     >
-                      <Sparkles className="w-4 h-4" /> {t('detail.evolve', { count: getEvolveRequirement(selectedPokemon) })}
+                      <Sparkles className="w-4 h-4" /> {t('detail.evolve', { count: getEvolveRequirement(currentSelectedPokemon) })}
                     </button>
                   )}
                   <div className="flex gap-4">
                     <button 
                       onClick={() => {
-                        sellCard(selectedPokemon);
-                        if (!collection.cards[selectedPokemon.id] || collection.cards[selectedPokemon.id] <= 1) {
+                        sellCard(currentSelectedPokemon);
+                        if (!collection.cards[currentSelectedPokemon.id] || collection.cards[currentSelectedPokemon.id] <= 1) {
                           setSelectedPokemon(null);
                         }
                       }}
                       className="flex-1 py-4 bg-red-600 text-white rounded-full font-bold hover:bg-red-700 transition-all uppercase tracking-widest text-xs flex items-center justify-center gap-2"
                     >
-                      <Zap className="w-4 h-4" /> {t('detail.sell', { price: getPrice(selectedPokemon.rarity, true) })}
+                      <Zap className="w-4 h-4" /> {t('detail.sell', { price: getPrice(currentSelectedPokemon.rarity, true) })}
                     </button>
                     <button 
                       onClick={() => {
-                        setSelectedTeam([selectedPokemon]);
+                        setSelectedTeam([currentSelectedPokemon]);
                         setView('select-team');
                         setSelectedPokemon(null);
                       }}
@@ -2693,6 +2889,35 @@ function AppContent() {
                 </div>
               </div>
             </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Global Floating Auto Battle Toggle for Mobile Battle View */}
+      <AnimatePresence>
+        {view === 'battle' && !battleState.isFinished && (
+          <motion.div
+            initial={{ opacity: 0, scale: 0.5, x: 100 }}
+            animate={{ opacity: 1, scale: 1, x: 0 }}
+            exit={{ opacity: 0, scale: 0.5, x: 100 }}
+            className="fixed bottom-6 right-6 z-[500] md:hidden"
+          >
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                setIsAutoBattle(!isAutoBattle);
+              }}
+              className={`w-14 h-14 rounded-full flex items-center justify-center shadow-2xl transition-all ${
+                isAutoBattle 
+                  ? 'bg-red-500 text-white animate-pulse' 
+                  : 'bg-[#141414] text-[#E4E3E0]'
+              }`}
+            >
+              <Zap className={`w-6 h-6 ${isAutoBattle ? 'fill-white' : ''}`} />
+            </button>
+            <div className="absolute -top-8 left-1/2 -translate-x-1/2 whitespace-nowrap bg-[#141414] text-[#E4E3E0] text-[8px] font-bold px-2 py-1 rounded uppercase tracking-widest shadow-lg">
+              {isAutoBattle ? t('battle.auto_on') : t('battle.auto_off')}
+            </div>
           </motion.div>
         )}
       </AnimatePresence>

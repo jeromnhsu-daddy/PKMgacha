@@ -23,10 +23,17 @@ export const TypeBadge: React.FC<{ type: string }> = ({ type }) => {
     Steel: "bg-slate-500",
     Fairy: "bg-pink-300",
   };
+  
+  const types = type.split('/');
+  
   return (
-    <span className={`${colors[type] || 'bg-slate-400'} text-white text-[8px] font-bold px-2 py-0.5 rounded-full uppercase tracking-tighter shadow-sm`}>
-      {t('type.' + type)}
-    </span>
+    <div className="flex gap-1">
+      {types.map((t_type, i) => (
+        <span key={i} className={`${colors[t_type] || 'bg-slate-400'} text-white text-[8px] font-bold px-2 py-0.5 rounded-full uppercase tracking-tighter shadow-sm`}>
+          {t('type.' + t_type)}
+        </span>
+      ))}
+    </div>
   );
 };
 

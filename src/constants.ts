@@ -120,6 +120,81 @@ export const GYMS: Gym[] = [
     bgImage: 'https://images.unsplash.com/photo-1605142859862-978be7eba909?auto=format&fit=crop&q=80&w=1000',
     arenaId: 'dojo',
     buildingIcon: '🏢'
+  },
+  {
+    id: 'lorelei',
+    name: 'Elite Four Lorelei',
+    leader: 'Lorelei',
+    type: 'Ice/Water',
+    description: 'The Ice-Cold Elite Four member. Her Pokémon will freeze you in your tracks!',
+    badge: "Lorelei's Badge",
+    badgeIcon: '❄️',
+    pokemonIds: [87, 91, 124, 131], // Dewgong, Cloyster, Jynx, Lapras
+    reward: 2000,
+    color: 'bg-cyan-600',
+    bgImage: 'https://images.unsplash.com/photo-1478131143081-80f7f84ca84d?auto=format&fit=crop&q=80&w=1000',
+    arenaId: 'ocean',
+    buildingIcon: '🏛️'
+  },
+  {
+    id: 'bruno',
+    name: 'Elite Four Bruno',
+    leader: 'Bruno',
+    type: 'Fighting/Rock',
+    description: 'The Master of Fighting Pokémon. He lives for the heat of battle!',
+    badge: "Bruno's Badge",
+    badgeIcon: '🥊',
+    pokemonIds: [106, 107, 95, 68], // Hitmonlee, Hitmonchan, Onix, Machamp
+    reward: 2500,
+    color: 'bg-red-800',
+    bgImage: 'https://images.unsplash.com/photo-1590556409324-aa1d726e5c3c?auto=format&fit=crop&q=80&w=1000',
+    arenaId: 'dojo',
+    buildingIcon: '🏛️'
+  },
+  {
+    id: 'agatha',
+    name: 'Elite Four Agatha',
+    leader: 'Agatha',
+    type: 'Ghost/Poison',
+    description: 'The Master of Ghost Pokémon. She will haunt your dreams!',
+    badge: "Agatha's Badge",
+    badgeIcon: '👻',
+    pokemonIds: [93, 94, 42, 110], // Haunter, Gengar, Golbat, Weezing
+    reward: 3000,
+    color: 'bg-indigo-900',
+    bgImage: 'https://images.unsplash.com/photo-1509248961158-e54f6934749c?auto=format&fit=crop&q=80&w=1000',
+    arenaId: 'mansion',
+    buildingIcon: '🏛️'
+  },
+  {
+    id: 'lance',
+    name: 'Elite Four Lance',
+    leader: 'Lance',
+    type: 'Dragon/Flying',
+    description: 'The Dragon Master. His Dragon Pokémon are legendary!',
+    badge: "Lance's Badge",
+    badgeIcon: '🐲',
+    pokemonIds: [130, 148, 149, 142], // Gyarados, Dragonair, Dragonite, Aerodactyl
+    reward: 4000,
+    color: 'bg-red-600',
+    bgImage: 'https://images.unsplash.com/photo-1534088568595-a066f410bcda?auto=format&fit=crop&q=80&w=1000',
+    arenaId: 'sky',
+    buildingIcon: '🏛️'
+  },
+  {
+    id: 'champion',
+    name: 'Champion Blue',
+    leader: 'Blue',
+    type: 'Mixed',
+    description: 'The Pokémon League Champion. He is the strongest trainer in the world!',
+    badge: 'Champion Title',
+    badgeIcon: '🏆',
+    pokemonIds: [18, 65, 112, 130, 103, 6], // Pidgeot, Alakazam, Rhydon, Gyarados, Exeggutor, Charizard
+    reward: 10000,
+    color: 'bg-slate-900',
+    bgImage: 'https://images.unsplash.com/photo-1464822759023-fed622ff2c3b?auto=format&fit=crop&q=80&w=1000',
+    arenaId: 'indigo',
+    buildingIcon: '👑'
   }
 ];
 
@@ -204,6 +279,15 @@ export const ARENAS: Arena[] = [
     color: 'bg-sky-400',
     icon: '☁️',
     bgImage: 'https://images.unsplash.com/photo-1534088568595-a066f410bcda?auto=format&fit=crop&q=80&w=1000'
+  },
+  {
+    id: 'indigo',
+    name: 'Indigo Plateau',
+    description: 'The ultimate stage for the Pokémon League. All types are equally powerful here.',
+    boostedTypes: [],
+    color: 'bg-slate-900',
+    icon: '🏛️',
+    bgImage: 'https://images.unsplash.com/photo-1464822759023-fed622ff2c3b?auto=format&fit=crop&q=80&w=1000'
   }
 ];
 
@@ -371,7 +455,7 @@ export const EVOLUTION_MAP: { [key: number]: number | number[] } = {
   147: 148, 148: 149, // Dratini
 };
 
-export const getPokemonData = (id: number) => {
+export const getPokemonData = (id: number, attackBoost = 0, defenseBoost = 0) => {
   const name = POKEMON_NAMES[id - 1];
   const types = getPokemonTypes(name);
   
@@ -392,7 +476,7 @@ export const getPokemonData = (id: number) => {
   // Base stats redesigned for faster combat (max 5 turns)
   // HP scales slower than damage
   let hp = 100 + level * 4;
-  let defense = level * 1.2;
+  let defense = level * 1.2 + defenseBoost;
   let speed = 40 + level;
   
   // Rarity bonus
@@ -421,7 +505,7 @@ export const getPokemonData = (id: number) => {
     moves: getPokemonMoves(types).map(m => ({
       ...m,
       // Damage scales faster than HP to ensure quick battles
-      damage: Math.floor((m.damage + level * 1.8) * rarityBonus)
+      damage: Math.floor((m.damage + level * 1.8 + attackBoost) * rarityBonus)
     }))
   };
 };

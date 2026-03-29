@@ -59,7 +59,7 @@ export interface Item {
   name: string;
   description: string;
   price: number;
-  type: 'heal' | 'full-heal' | 'rare-candy' | 'lucky-egg' | 'evolution-candy';
+  type: 'heal' | 'full-heal' | 'rare-candy' | 'lucky-egg' | 'evolution-candy' | 'attack-boost' | 'defense-boost';
   value?: number;
   icon: string;
 }
@@ -68,8 +68,11 @@ export interface CollectionState {
   cards: { [id: number]: number };
   coins: number;
   hpMap?: { [id: number]: number };
+  attackBoosts?: { [id: number]: number };
+  defenseBoosts?: { [id: number]: number };
   lastHealTime?: number;
   badges: string[];
   inventory: { [itemId: string]: number };
   lang?: Language;
+  lastDailyReward?: number;
 }

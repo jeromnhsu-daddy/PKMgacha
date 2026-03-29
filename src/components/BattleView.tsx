@@ -211,7 +211,7 @@ export const BattleView: React.FC<BattleViewProps> = ({
                   onClick={() => handleAttack(move)}
                   className="p-4 bg-[#141414] text-[#E4E3E0] rounded-xl font-bold flex flex-col items-center gap-1 hover:bg-slate-800 disabled:opacity-50 transition-all group relative overflow-hidden"
                 >
-                  <span className="text-xs uppercase relative z-10">{t('move.' + move.id)}</span>
+                  <span className="text-xs relative z-10">{t('move.' + move.name)}</span>
                   <span className="text-[10px] font-mono opacity-60 relative z-10">{t('battle.dmg')}: {move.damage} | {t('type.' + move.type)}</span>
                   <div className="absolute inset-0 bg-white/10 translate-y-full group-hover:translate-y-0 transition-transform" />
                 </button>
