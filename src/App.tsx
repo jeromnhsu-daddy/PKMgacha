@@ -732,7 +732,7 @@ function AppContent() {
       setBattleState(prev => {
         const newLogs = [...prev.logs, t('battle.log.attack', { 
           attacker: t(`pokemon.${attacker.id}`), 
-          move: t('move.' + move.name), 
+          move: t('move.' + move.name.toLowerCase().replace(' ', '_')), 
           effect: effectMsg, 
           damage 
         })];
@@ -815,7 +815,7 @@ function AppContent() {
       setBattleState(prev => {
         const newLogs = [...prev.logs, t('battle.log.attack', { 
           attacker: t(`pokemon.${attacker.id}`), 
-          move: t('move.' + move.name), 
+          move: t('move.' + move.name.toLowerCase().replace(' ', '_')), 
           effect: effectMsg, 
           damage 
         })];
@@ -1130,6 +1130,16 @@ function AppContent() {
           >
             {t('nav.guide')}
           </button>
+        </div>
+
+        <div className="flex items-center gap-3 md:gap-4">
+          <button 
+            onClick={() => setIsMuted(!isMuted)}
+            className="p-2 hover:bg-[#141414]/10 rounded-full transition-colors"
+            title={isMuted ? "Unmute" : "Mute"}
+          >
+            {isMuted ? <VolumeX className="w-5 h-5" /> : <Volume2 className="w-5 h-5" />}
+          </button>
           <button 
             onClick={() => {
               playSound('click');
@@ -1141,16 +1151,6 @@ function AppContent() {
           >
             <Languages className="w-3 h-3 md:w-4 md:h-4" />
             {t('nav.lang')}
-          </button>
-        </div>
-
-        <div className="flex items-center gap-3 md:gap-4">
-          <button 
-            onClick={() => setIsMuted(!isMuted)}
-            className="p-2 hover:bg-[#141414]/10 rounded-full transition-colors"
-            title={isMuted ? "Unmute" : "Mute"}
-          >
-            {isMuted ? <VolumeX className="w-5 h-5" /> : <Volume2 className="w-5 h-5" />}
           </button>
           <div className="flex items-center gap-2 px-3 md:px-4 py-1.5 md:py-2 bg-[#141414] text-[#E4E3E0] rounded-full">
             <Zap className="w-3 h-3 md:w-4 md:h-4 text-yellow-400 fill-yellow-400" />
@@ -2531,7 +2531,7 @@ function AppContent() {
                         onClick={() => handleAttack(move)}
                         className="p-2 sm:p-4 bg-[#141414] text-[#E4E3E0] rounded-lg sm:rounded-xl font-bold flex flex-col items-center gap-0.5 sm:gap-1 hover:bg-slate-800 disabled:opacity-50 transition-all group relative overflow-hidden"
                       >
-                        <span className="text-[8px] sm:text-xs relative z-10">{t('move.' + move.name)}</span>
+                        <span className="text-[8px] sm:text-xs relative z-10">{t('move.' + move.name.toLowerCase().replace(' ', '_'))}</span>
                         <span className="text-[7px] sm:text-[10px] font-mono opacity-60 relative z-10">{t('detail.dmg')}: {move.damage} | {t(`type.${move.type}`)}</span>
                         <div className="absolute inset-0 bg-white/10 translate-y-full group-hover:translate-y-0 transition-transform" />
                       </button>
@@ -2813,7 +2813,7 @@ function AppContent() {
                     {currentSelectedPokemon.moves.map((move, idx) => (
                       <div key={idx} className="flex justify-between items-center bg-white/5 p-3 rounded-xl border border-white/10">
                         <div className="flex flex-col">
-                          <span className="text-sm font-bold tracking-widest">{t('move.' + move.name)}</span>
+                          <span className="text-sm font-bold tracking-widest">{t('move.' + move.name.toLowerCase().replace(' ', '_'))}</span>
                           <span className="text-[10px] opacity-40 uppercase">{t('type.' + move.type)} {t('detail.moveType')}</span>
                         </div>
                         <span className="text-xl font-mono font-bold text-red-400">{move.damage} {t('detail.dmg')}</span>

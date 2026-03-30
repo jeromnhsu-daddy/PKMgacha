@@ -6,8 +6,9 @@
   "scripts": {
     "dev": "vite --port=3000 --host=0.0.0.0",
     "build": "vite build",
+    "build:docs": "vite build && node scripts/copy-dist-to-docs.js",
     "preview": "vite preview",
-    "clean": "rm -rf docs",
+    "clean": "rm -rf dist",
     "lint": "tsc --noEmit"
   },
   "dependencies": {
