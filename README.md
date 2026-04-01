@@ -1,55 +1,20 @@
-# Pokémon TCG: Gen 1 Collector
+<div align="center">
+<img width="1200" height="475" alt="GHBanner" src="https://github.com/user-attachments/assets/0aa67016-6eaf-458a-adb2-6e31a0763ed6" />
+</div>
 
-A card drawing game where you can collect all 151 original Pokémon with beautiful flip animations and a complete collection tracker.
+# Run and deploy your AI Studio app
 
-## 🌟 Features
+This contains everything you need to run your app locally.
 
-- **Card Drawing**: Experience the thrill of opening packs and drawing cards from the original 151 Pokémon.
-- **Collection Tracker**: Keep track of your progress as you aim to complete your Gen 1 Pokédex.
-- **Battle System**: Test your collected cards in a battle system.
-- **Gym Selection**: Challenge different gyms as you progress.
-- **Team Management**: Build and manage your ultimate Pokémon team.
-- **Shop**: Use in-game currency to buy more packs and items.
-- **Beautiful Animations**: Smooth flip animations and high-quality card art.
-- **Multilingual Support**: Support for multiple languages.
+View your app in AI Studio: https://ai.studio/apps/65d70b5c-2a42-41e3-a5e4-a61f6d12abff
 
-## 🚀 Getting Started
+## Run Locally
 
-### Prerequisites
+**Prerequisites:**  Node.js
 
-- Node.js (v18 or higher)
-- npm
 
-### Installation
-
-1. Clone the repository:
-   ```bash
-   git clone <repository-url>
-   ```
-2. Install dependencies:
-   ```bash
-   npm install
-   ```
-3. Start the development server:
-   ```bash
-   npm run dev
-   ```
-
-## 🛠️ Built With
-
-- **React**: Frontend framework
-- **Vite**: Build tool
-- **Tailwind CSS**: Styling
-- **Motion**: Animations
-- **Lucide React**: Icons
-
-## 📂 Project Structure
-
-- `src/components`: UI components for different views (Battle, Collection, Draw, etc.)
-- `src/contexts`: React contexts for state management
-- `src/constants`: Game data and constants
-- `docs/`: Built files for GitHub Pages deployment
-
-## 📄 License
-
-This project is for educational and personal use only. Pokémon and all related properties are trademarks of Nintendo, Creatures Inc., and GAME FREAK inc.
+1. Install dependencies:
+   `npm install`
+2. Set the `GEMINI_API_KEY` in [.env.local](.env.local) to your Gemini API key
+3. Run the app:
+   `npm run dev`
