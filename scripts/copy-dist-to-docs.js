@@ -27,10 +27,20 @@ if (fs.existsSync(destDir)) {
 }
 copyRecursiveSync(srcDir, destDir);
 
+// Copy README.md to docs
+if (fs.existsSync('README.md')) {
+  fs.copyFileSync('README.md', path.join(destDir, 'README.md'));
+}
+
 console.log(`Copying ${srcDir} to ${buildDir}...`);
 if (fs.existsSync(buildDir)) {
   fs.rmSync(buildDir, { recursive: true, force: true });
 }
 copyRecursiveSync(srcDir, buildDir);
+
+// Copy README.md to build
+if (fs.existsSync('README.md')) {
+  fs.copyFileSync('README.md', path.join(buildDir, 'README.md'));
+}
 
 console.log('Done!');
